@@ -2,6 +2,12 @@ use std::io::{stdin, BufRead, BufReader};
 use clap::{App, Arg, ArgGroup};
 use std::fs::File;
 
+// フィールド指定がどの形式で行われているか
+enum FieldIdType {
+    ByNumber,       // フィールド番号
+    ByName,         // フィールド名
+}
+
 fn main() {
     // オプション定義
     let app = App::new("ncut")
@@ -12,7 +18,7 @@ fn main() {
                      .help("ファイル名")
                  )
                 .arg(Arg::with_name("delim")
-                     .help("区切り記号 (デフォルトは空白)")
+                     .help("区切り記号 (デフォルトはTAB)")
                      .short("d")
                      .long("delimiter")
                      .takes_value(true)
@@ -46,27 +52,34 @@ fn main() {
     };
 
     // フィールド名によるフィールド選択の場合、その選択値を取得
-    let viewfield_str: (i32, &str) = match matches.value_of("field") {
-        None => (1, matches.value_of("field_by_title").unwrap()),
-        Some(o) => (0, o),
+    // フィールド番号（文字数・バイト数）指定が優先される
+    let viewfield_str: (FieldIdType, &str) = match matches.value_of("field") {
+        None => (FieldIdType::ByName, matches.value_of("field_by_title").unwrap()),
+        Some(o) => (FieldIdType::ByNumber, o),
     };
 
     // ファイル名が指定されている場合はそのファイルを開く
     // ファイル名が指定されていない場合は標準入力を開く
-    if let Some(path) = matches.value_of("file") {
-        let f = File::open(path).unwrap();
-        let reader = BufReader::new(f);
-        read_and_output(reader, delimiter, viewfield_str);
-    } else {
-        let stdin = stdin();
-        let reader = stdin.lock();
-        read_and_output(reader, delimiter, viewfield_str);
+    match matches.value_of("file") {
+        Some(path) => {
+            match File::open(path) {
+                Ok(f) => {
+                    let reader = BufReader::new(f);
+                    read_and_output(reader, delimiter, viewfield_str);
+                },
+                Err(e) => println!("{}: {}", path, e),
+            }
+        },
+        None => {
+            let stdin = stdin();
+            let reader = stdin.lock();
+            read_and_output(reader, delimiter, viewfield_str);
+        },
     }
-
 }
 
 // ファイル読み込み表示
-fn read_and_output<R: BufRead>(mut reader: R, delimiter: &str, viewfield_str: (i32, &str)) {
+fn read_and_output<R: BufRead>(mut reader: R, delimiter: &str, viewfield_str: (FieldIdType, &str)) {
     // 1行目がフィールド名である可能性に備え、また、フィールド数を算出するため、別途読み出す
     let mut first_line = String::new();
     reader.read_line(&mut first_line).expect("Can't read");
@@ -78,10 +91,9 @@ fn read_and_output<R: BufRead>(mut reader: R, delimiter: &str, viewfield_str: (i
     // 出力するフィールドを指定
     // フィールド数が1の時（区切り記号によって区切られなかった時）はフィールド全体を出力
     let viewfield = match viewfield_str.0 {
-        0 => set_viewfield(field_count, viewfield_str.1),
-        1 => set_viewfield(field_count,
-                           &make_viewfield_str(first_line.split(delimiter).collect(), viewfield_str.1)),
-        _ => panic!(),
+        FieldIdType::ByNumber => set_viewfield(field_count, viewfield_str.1),
+        FieldIdType::ByName   => set_viewfield(field_count,
+                                 &make_viewfield_str(first_line.split(delimiter).collect(), viewfield_str.1)),
     };
 
     // 区切り記号、フィールド指定をもとにデータを標準出力に出力する
