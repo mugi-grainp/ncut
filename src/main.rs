@@ -23,6 +23,12 @@ fn main() {
                      .long("delimiter")
                      .takes_value(true)
                  )
+                .arg(Arg::with_name("characters")
+                     .help("文字数で切り出す")
+                     .short("c")
+                     .long("characters")
+                     .takes_value(true)
+                 )
                 .arg(Arg::with_name("field")
                      .help("フィールド識別子")
                      .short("f")
@@ -36,7 +42,7 @@ fn main() {
                      .takes_value(true)
                  )
                 .group(ArgGroup::with_name("field_specification")
-                       .args(&["field", "field_by_title"])
+                       .args(&["characters", "field", "field_by_title"])
                        .required(true)
                  );
 
