@@ -39,9 +39,9 @@ fn main() {
     let matches = app.get_matches();
 
     // 区切り記号を設定
-    // オプションによる指定がない場合のデフォルト値は半角スペース
+    // オプションによる指定がない場合のデフォルト値はTAB
     let delimiter = match matches.value_of("delim") {
-        None => " ",
+        None => "\t",
         Some(o) => o
     };
 
