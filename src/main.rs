@@ -79,10 +79,6 @@ fn main() {
         (false, false, true) => (FieldSpecification::ByCharCount,   matches.value_of("characters").unwrap()),
         _ => unreachable!(),
     };
-    // let viewfield_str: (FieldSpecification, &str) = match matches.value_of("field") {
-    //     None => (FieldSpecification::ByFieldName, matches.value_of("field_by_title").unwrap()),
-    //     Some(o) => (FieldSpecification::ByFieldNumber, o),
-    // };
 
     // ファイル名が指定されている場合はそのファイルを開く
     // ファイル名が指定されていない場合は標準入力を開く
