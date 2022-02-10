@@ -147,8 +147,10 @@ fn split_and_print(row: &str, delimiter: &str, viewfield: &Vec<bool>) {
     let mut output: Vec<&str> = row.split(delimiter).collect();
     let mut i = 0;
 
-    // 先頭の空要素を除去
-    output.remove(0);
+    // 文字数で切り出す場合に限り、先頭の空要素を除去
+    if delimiter == "" {
+        output.remove(0);
+    }
 
     // viewfieldがtrueの値のみを残す
     output.retain(|_| (viewfield[i], i += 1).0);
