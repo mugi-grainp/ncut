@@ -130,7 +130,7 @@ fn set_viewfield(field_count: usize, field_str: &str) -> Vec<bool> {
                     x if x.find('-').is_some()  => {
                         let from_to: Vec<&str> = x.split('-').collect();
 
-                        let fstart = usize::from_str_radix(from_to[0], 10).unwrap() ;
+                        let fstart = usize::from_str_radix(from_to[0], 10).unwrap_or(1);
                         let fend = usize::from_str_radix(from_to[1], 10).unwrap_or(field_count);
 
                         let actual_start = if fstart <= field_count {
