@@ -3,10 +3,9 @@ use clap::{App, Arg, ArgGroup};
 use std::fs::File;
 
 // フィールド指定がどの形式で行われているか
-enum FieldSpecification {
-    ByFieldNumber,       // フィールド番号
-    ByFieldName,         // フィールド名
-    ByCharCount,         // 文字数
+enum FieldIdType {
+    ByNumber,       // フィールド番号
+    ByName,         // フィールド名
 }
 
 fn main() {
@@ -24,12 +23,6 @@ fn main() {
                      .long("delimiter")
                      .takes_value(true)
                  )
-                .arg(Arg::with_name("characters")
-                     .help("文字数で切り出す")
-                     .short("c")
-                     .long("characters")
-                     .takes_value(true)
-                 )
                 .arg(Arg::with_name("field")
                      .help("フィールド識別子")
                      .short("f")
@@ -43,7 +36,7 @@ fn main() {
                      .takes_value(true)
                  )
                 .group(ArgGroup::with_name("field_specification")
-                       .args(&["characters", "field", "field_by_title"])
+                       .args(&["field", "field_by_title"])
                        .required(true)
                  );
 
@@ -54,30 +47,15 @@ fn main() {
     // 区切り記号を設定
     // オプションによる指定がない場合のデフォルト値はTAB
     let delimiter = match matches.value_of("delim") {
-        Some(o) => if matches.is_present("characters") {
-            ""
-        } else {
-            o
-        },
-        None => if matches.is_present("characters") {
-            ""
-        } else {
-            "\t" 
-        },
+        None => "\t",
+        Some(o) => o
     };
 
     // フィールド名によるフィールド選択の場合、その選択値を取得
     // フィールド番号（文字数・バイト数）指定が優先される
-    let (fnum, fname, charcount) = (
-        matches.is_present("field"),
-        matches.is_present("field_by_title"),
-        matches.is_present("characters"),
-    );
-    let viewfield_str: (FieldSpecification, &str) = match (fnum, fname, charcount) {
-        (true, false, false) => (FieldSpecification::ByFieldNumber, matches.value_of("field").unwrap()),
-        (false, true, false) => (FieldSpecification::ByFieldName,   matches.value_of("field_by_title").unwrap()),
-        (false, false, true) => (FieldSpecification::ByCharCount,   matches.value_of("characters").unwrap()),
-        _ => unreachable!(),
+    let viewfield_str: (FieldIdType, &str) = match matches.value_of("field") {
+        None => (FieldIdType::ByName, matches.value_of("field_by_title").unwrap()),
+        Some(o) => (FieldIdType::ByNumber, o),
     };
 
     // ファイル名が指定されている場合はそのファイルを開く
@@ -101,44 +79,28 @@ fn main() {
 }
 
 // ファイル読み込み表示
-fn read_and_output<R: BufRead>(mut reader: R, delimiter: &str, viewfield_str: (FieldSpecification, &str)) {
-    match viewfield_str.0 {
-        FieldSpecification::ByCharCount => {
-            for line in reader.lines() {
-                let row = line.unwrap();
-                //  文字数を算出
-                let char_count = row.split(delimiter).collect::<Vec<_>>().len();
-                let viewfield = set_viewfield(char_count, viewfield_str.1);
+fn read_and_output<R: BufRead>(mut reader: R, delimiter: &str, viewfield_str: (FieldIdType, &str)) {
+    // 1行目がフィールド名である可能性に備え、また、フィールド数を算出するため、別途読み出す
+    let mut first_line = String::new();
+    reader.read_line(&mut first_line).expect("Can't read");
+    first_line = first_line.trim_end().to_string();
 
-                split_and_print(&row, delimiter, &viewfield);
-            }
-        },
+    // フィールド数を算出
+    let field_count = first_line.split(delimiter).collect::<Vec<_>>().len();
 
-        FieldSpecification::ByFieldName | FieldSpecification::ByFieldNumber => {
-            // 1行目がフィールド名である可能性に備え、また、フィールド数を算出するため、別途読み出す
-            let mut first_line = String::new();
-            reader.read_line(&mut first_line).expect("Can't read");
-            first_line = first_line.trim_end().to_string();
+    // 出力するフィールドを指定
+    // フィールド数が1の時（区切り記号によって区切られなかった時）はフィールド全体を出力
+    let viewfield = match viewfield_str.0 {
+        FieldIdType::ByNumber => set_viewfield(field_count, viewfield_str.1),
+        FieldIdType::ByName   => set_viewfield(field_count,
+                                 &make_viewfield_str(first_line.split(delimiter).collect(), viewfield_str.1)),
+    };
 
-            // フィールド数を算出
-            let field_count = first_line.split(delimiter).collect::<Vec<_>>().len();
-
-            // 出力するフィールドを指定
-            // フィールド数が1の時（区切り記号によって区切られなかった時）はフィールド全体を出力
-            let viewfield = match viewfield_str.0 {
-                FieldSpecification::ByFieldNumber => set_viewfield(field_count, viewfield_str.1),
-                FieldSpecification::ByFieldName   => set_viewfield(field_count,
-                                                     &make_viewfield_str(first_line.split(delimiter).collect(), viewfield_str.1)),
-                FieldSpecification::ByCharCount   => unreachable!(),
-            };
-
-            // 区切り記号、フィールド指定をもとにデータを標準出力に出力する
-            split_and_print(&first_line, delimiter, &viewfield);
-            for line in reader.lines() {
-                let row = line.unwrap();
-                split_and_print(&row, delimiter, &viewfield);
-            }
-        },
+    // 区切り記号、フィールド指定をもとにデータを標準出力に出力する
+    split_and_print(&first_line, delimiter, &viewfield);
+    for line in reader.lines() {
+        let row = line.unwrap();
+        split_and_print(&row, delimiter, &viewfield);
     }
 }
 
@@ -146,9 +108,6 @@ fn read_and_output<R: BufRead>(mut reader: R, delimiter: &str, viewfield_str: (F
 fn split_and_print(row: &str, delimiter: &str, viewfield: &Vec<bool>) {
     let mut output: Vec<&str> = row.split(delimiter).collect();
     let mut i = 0;
-
-    // 先頭の空要素を除去
-    output.remove(0);
 
     // viewfieldがtrueの値のみを残す
     output.retain(|_| (viewfield[i], i += 1).0);
