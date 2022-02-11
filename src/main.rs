@@ -1,4 +1,4 @@
-use std::io::{stdin, BufRead, BufReader};
+use std::io::{stdin, stdout, Write, BufWriter, BufRead, BufReader};
 use clap::{App, Arg, ArgGroup};
 use std::fs::File;
 
@@ -7,6 +7,7 @@ enum FieldSpecification {
     ByFieldNumber,       // フィールド番号
     ByFieldName,         // フィールド名
     ByCharCount,         // 文字数
+    ByBytes,             // バイト数
 }
 
 fn main() {
@@ -22,6 +23,12 @@ fn main() {
                      .help("区切り記号 (デフォルトはTAB)")
                      .short("d")
                      .long("delimiter")
+                     .takes_value(true)
+                 )
+                .arg(Arg::with_name("bytes")
+                     .help("バイト数で切り出す")
+                     .short("b")
+                     .long("bytes")
                      .takes_value(true)
                  )
                 .arg(Arg::with_name("characters")
@@ -43,7 +50,7 @@ fn main() {
                      .takes_value(true)
                  )
                 .group(ArgGroup::with_name("field_specification")
-                       .args(&["characters", "field", "field_by_title"])
+                       .args(&["bytes", "characters", "field", "field_by_title"])
                        .required(true)
                  );
 
@@ -54,7 +61,7 @@ fn main() {
     // 区切り記号を設定
     // オプションによる指定がない場合のデフォルト値はTAB
     let delimiter = match matches.value_of("delim") {
-        Some(o) => if matches.is_present("characters") {
+        Some(o) => if matches.is_present("bytes") || matches.is_present("characters") {
             ""
         } else {
             o
@@ -68,15 +75,17 @@ fn main() {
 
     // フィールド名によるフィールド選択の場合、その選択値を取得
     // フィールド番号（文字数・バイト数）指定が優先される
-    let (fnum, fname, charcount) = (
+    let (fnum, fname, charcount, bytes) = (
         matches.is_present("field"),
         matches.is_present("field_by_title"),
         matches.is_present("characters"),
+        matches.is_present("bytes"),
     );
-    let viewfield_str: (FieldSpecification, &str) = match (fnum, fname, charcount) {
-        (true, false, false) => (FieldSpecification::ByFieldNumber, matches.value_of("field").unwrap()),
-        (false, true, false) => (FieldSpecification::ByFieldName,   matches.value_of("field_by_title").unwrap()),
-        (false, false, true) => (FieldSpecification::ByCharCount,   matches.value_of("characters").unwrap()),
+    let viewfield_str: (FieldSpecification, &str) = match (fnum, fname, charcount, bytes) {
+        (true, false, false, false) => (FieldSpecification::ByFieldNumber, matches.value_of("field").unwrap()),
+        (false, true, false, false) => (FieldSpecification::ByFieldName,   matches.value_of("field_by_title").unwrap()),
+        (false, false, true, false) => (FieldSpecification::ByCharCount,   matches.value_of("characters").unwrap()),
+        (false, false, false, true) => (FieldSpecification::ByBytes,       matches.value_of("bytes").unwrap()),
         _ => unreachable!(),
     };
 
@@ -114,6 +123,17 @@ fn read_and_output<R: BufRead>(mut reader: R, delimiter: &str, viewfield_str: (F
             }
         },
 
+        FieldSpecification::ByBytes => {
+            for line in reader.lines() {
+                let row = line.unwrap();
+                //  文字数を算出
+                let bytes_count = row.as_bytes().len();
+                let viewfield = set_viewfield(bytes_count, viewfield_str.1);
+
+                split_and_print_by_bytes(&row, &viewfield);
+            }
+        },
+
         FieldSpecification::ByFieldName | FieldSpecification::ByFieldNumber => {
             // 1行目がフィールド名である可能性に備え、また、フィールド数を算出するため、別途読み出す
             let mut first_line = String::new();
@@ -129,7 +149,7 @@ fn read_and_output<R: BufRead>(mut reader: R, delimiter: &str, viewfield_str: (F
                 FieldSpecification::ByFieldNumber => set_viewfield(field_count, viewfield_str.1),
                 FieldSpecification::ByFieldName   => set_viewfield(field_count,
                                                      &make_viewfield_str(first_line.split(delimiter).collect(), viewfield_str.1)),
-                FieldSpecification::ByCharCount   => unreachable!(),
+                _ => unreachable!(),
             };
 
             // 区切り記号、フィールド指定をもとにデータを標準出力に出力する
@@ -157,6 +177,22 @@ fn split_and_print(row: &str, delimiter: &str, viewfield: &Vec<bool>) {
     let output_line = output.join(delimiter);
 
     println!("{}", output_line);
+}
+
+// バイト数による切り出し
+fn split_and_print_by_bytes(row: &str, viewfield: &Vec<bool>) {
+    let output: &[u8] = row.as_bytes();
+    let mut i = 0;
+    let mut writer = BufWriter::new(stdout());
+
+    // viewfieldがtrueの値を出力
+    while i < output.len() {
+        if viewfield[i] {
+            writer.write(&[output[i]]).unwrap();
+        }
+        i += 1;
+    }
+    writer.write(b"\n").unwrap();
 }
 
 // 出力フィールド指定子を解釈し、各フィールドを出力するかどうか真偽値Vectorで返す
